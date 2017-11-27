@@ -11,15 +11,14 @@
 
 #include <trisonica.h>
 #include <gps.h>
-#include <SparkFunMPL3115A2.h>
+#include <MPL3115A2.h>
 
 struct WeatherDatum
 {
-    TrisonicaDatum triDatum;
-    GPSdatum gpsDatam;
-    MPL3115A2 altimeter;
+    TrisonicaDatum windDatum;
+    GPSdatum gpsDatum;
+    AltimeterDatum altDatum;
 
-    
     //TempPressDatum
     //OtherDatums?
 };
@@ -31,34 +30,15 @@ protected:
     Trisonica* anemometer = NULL;
     Altimeter* altimeter = NULL;
     
-    
-    
+    WeatherDatum workingDatum;
 public:
     WeatherCopter(void) {}
     
-    bool CheckForNewDatum(void)
-    {
-        bool retVal = 0;
-        
-        if(gps->CheckSerial() & GGA)
-        {
-            //currGPSstring = gps->GetReading().MakeShortDataString();
-//            WriteSD(filename, gps->GetReading().MakeShortDataString());
-        }
-
-        if(anemometer->CheckSerial())
-        {
-            //ReadTemperature();
-            //ReadPressure();
-//            WriteSD(filename, trisonica->GetReading().MakeDataString() + String(',') + currGPSstring);
-        }
-        
-        return retVal;
-    }
+    bool CheckForNewDatums(void);
     
-    String MakeDatumString(void)
+    String MakeDataString(void)
     {
-        String datum = gps->GetReading().MakeShortDataString() + anemometer->GetReading().MakeDataString();
+        String datum = workingDatum.gpsDatum.MakeShortDataString() + workingDatum.windDatum.MakeDataString();
         return datum;
     }
 };

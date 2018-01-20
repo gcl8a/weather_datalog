@@ -6,77 +6,83 @@
 //
 //
 
-//#ifndef weather_copter_h
-//#define weather_copter_h
-
-#pragma once
+#ifndef weather_copter_h
+#define weather_copter_h
 
 #include <trisonica.h>
 #include <gps.h>
-#include <MPL3115A2.h>
+//#include <MPL3115A2.h>
 #include <BME280.h>
 #include <LSM9DS1.h>
 
-#define TRISONICA 0x10
-#define ALT280 0x20
-#define IMU 0x40
+#include <dataflash.h>
+//#include <TList.h>
+
+#include <SdFat.h>
+
+#define FLASH_CS 7
+
+/*
+ * One set of weather copter data, equivalent to one page of data
+ * Includes a GPS and Altimeter stamp + up to 11 Trisonica + IMU stamps
+ */
+
+struct WeatherDump
+{
+    uint8_t fileNumber = 0;
+    uint8_t windDatums = 0; //number of Trisonica/IMU readings in this record (max 11; 255 indicates error)
+    
+    BufferArray buffer;
+    //uint8_t bufferLength = 0; //current byte
+    
+    WeatherDump(void) : buffer(256) {}  //hard-coded for now...
+};
+
+/*
+ * A collection of weather datasets (dump, pages, whatever). Essentially equivalent to a file
+ * but since this is stored in flash, it's not really a "file"
+ */
+
+struct WeatherStore
+{
+    uint8_t fileNumber = 0;
+    char fileName[8];
+    
+    uint16_t startPage = 1;
+    uint16_t endPage = 0;
+};
 
 class WeatherCopter
 {
 protected:
-    TrisonicaDatum windDatum;
-    GPSdatum gpsDatum;
-    AltimeterDatum altDatum3115;
-    AltimeterDatum altDatum280;
-    AHRSDatum ahrsDatum;
+    WeatherDump currDump;   //the current dataset
+    char filenameBase[8];
 
-    Trisonica anemometer;
-    GPS_MTK3339 gps;
-    BME280 altimeter280;
-    MPL3115A2 altimeter3115;
-    LSM9DS1 imu;
-    
+    Flashstore flash;
 public:
-    WeatherCopter(HardwareSerial* triSer, HardwareSerial* gpsSer) : anemometer(triSer), gps(gpsSer)
-    {}
+    WeatherCopter(void) : flash(&SPI, FLASH_CS) {}
     
-    bool Init(void)
-    {
-        altimeter280.Init();
-        imu.Init();
-        gps.Init(); //doesn't really init; just sends data rate stuff
+    bool Init(const char*);
 
-        imu.CalibrateMagnetometer(100);
-
-        return 1;
-    }
+    //for managing individual records
+    uint8_t CreateRecord(void);
+    void AddGPSDump(const GPSDatum&);
+    void AddAltDump(const AltimeterDump& altDump);
+    void AddWindAndIMUDump(const TrisonicaDatum& triDatum, const AHRSDatum& imuDatum);
     
-    uint8_t CheckForGPSDatum(void);
-    bool CheckForWindDatum(void);
-    bool CheckForIMUUpdate(void);
-    bool CheckForAlt280Update(void);
-    bool CheckForAlt3115Update(void);
-    
-    uint8_t CheckSensors(void);
-    
-    bool SetActiveNMEAStrings(uint8_t nmea) {return gps.SetActiveNMEAStrings(nmea);}
-    int MakeFilename(void)
-    {
-        return gpsDatum.MakeMonthDay();
-    }
+    //for managing Flash storage
+    void ListStores(bool refresh = true);
+    Datastore* CreateStore(uint8_t);
+    uint16_t EraseStore(uint8_t fileNumber);
 
-    String MakeDataString(void)
-    {
-        String datum = gpsDatum.MakeShortDataString() + windDatum.MakeDataString()
-                       + altDatum280.MakeDataString() + ahrsDatum.MakeDataString();
-        return datum;
-    }
+    Datastore* WriteCurrentDumpToFlash(void);
+    uint16_t SaveStoreToSD(uint8_t fileNumber);
+    
+    uint16_t SplashStore(uint8_t fileNumber);
 
-    String MakeShortDataString(void)
-    {
-        String datum = gpsDatum.MakeShortDataString() + windDatum.MakeDataString();
-        return datum;
-    }
+protected:
+    //for managing Flash storage
+    uint8_t SaveBufferToSD(File* dataFile, const BufferArray& buffer);
 };
 
-//#endif /* weather_copter_h */
+#endif /* weather_copter_h */

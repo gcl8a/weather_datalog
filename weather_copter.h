@@ -37,7 +37,7 @@ class WeatherCopter
 {
 protected:
     FlashStoreManager flash;
-    WeatherStore currStore;
+    //WeatherStore currStore;
     
     uint8_t windCount = 0;
 public:
@@ -49,15 +49,17 @@ public:
     //uint8_t CreateRecord(void);
     void AddGPSAltDump(const GPSDatum&, const AltimeterDatum&);
     void AddWindAndIMUDump(const TrisonicaDatum&, const AHRSDatum&);
-    
+    uint32_t ReadGPSAltDump(GPSDatum& gpsDatum, AltimeterDatum& altDatum);
+    uint32_t ReadWindAndIMUDump(TrisonicaDatum& triDatum, AHRSDatum& imuDatum);
+
     //for managing Flash storage
-    void ListStores(bool refresh = true);
+    void ListStores(bool refresh = false);
     uint32_t CreateStore(uint16_t);
     uint32_t EraseStore(uint8_t fileNumber);
+    uint32_t CloseStore(uint8_t fileNumber);
 
-//    Datastore* WriteCurrentDumpToFlash(void);
-    uint16_t SaveStoreToSD(uint8_t fileNumber);
-    uint16_t SplashStore(uint8_t fileNumber);
+    uint32_t SaveStoreToSD(uint16_t fileNumber);
+    uint32_t SplashStore(uint16_t fileNumber);
 
 protected:
     //for managing Flash storage

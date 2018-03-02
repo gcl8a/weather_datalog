@@ -55,53 +55,65 @@ bool WeatherCopter::Init(void)
     return true;
 }
 
-void WeatherCopter::AddGPSAltDump(const GPSDatum& gpsDatum, const AltimeterDatum& altDatum)
+uint32_t WeatherCopter::AddGPSAltDump(const GPSDatum& gpsDatum, const AltimeterDatum& altDatum)
 {
     BufferArray buffer(1 + sizeof(GPSDatum) + sizeof(AltimeterDatum));
     
     buffer[0] = 0; //indicates GPS (ie, 'new') record
+    
     memcpy(&buffer[1], &gpsDatum, sizeof(GPSDatum));
     memcpy(&buffer[1 + sizeof(GPSDatum)], &altDatum, sizeof(AltimeterDatum));
-    
-    flash.Write(buffer);
+
+    uint32_t bytesWritten = flash.Write(buffer);
+    if(!bytesWritten) SerialUSB.println("Write error!");
     
     windCount = 0; //reset wind count
+    
+    return bytesWritten;
 }
 
-void WeatherCopter::AddWindAndIMUDump(const TrisonicaDatum& triDatum, const AHRSDatum& imuDatum)
+uint32_t WeatherCopter::AddWindAndIMUDump(const TrisonicaDatum& triDatum, const AHRSDatum& imuDatum)
 {
     BufferArray buffer(1 + sizeof(TrisonicaDatum) + sizeof(AHRSDatum));
     
     buffer[0] = ++windCount; //tracks number of wind records for each GPS datum
     if(windCount == 255) windCount = 254; //if GPS fails, keep storing data but don't let count roll-over
+
     memcpy(&buffer[1], &triDatum, sizeof(triDatum));
     memcpy(&buffer[1 + sizeof(triDatum)], &imuDatum, sizeof(imuDatum));
-    
-    flash.Write(buffer);
+
+    uint32_t bytesWritten = flash.Write(buffer);
+    if(!bytesWritten) SerialUSB.println("Write error!");
+
+    return bytesWritten;
 }
 
 uint32_t WeatherCopter::ReadGPSAltDump(GPSDatum& gpsDatum, AltimeterDatum& altDatum)
 {
     BufferArray buffer(sizeof(GPSDatum) + sizeof(AltimeterDatum));
     
-    flash.ReadBytes(buffer);
+    uint32_t bytesRead = flash.Read(buffer);
+    if(bytesRead)
+    {
+        memcpy(&gpsDatum, &buffer[0], sizeof(GPSDatum));
+        memcpy(&altDatum, &buffer[sizeof(GPSDatum)], sizeof(AltimeterDatum));
+    }
     
-    memcpy(&gpsDatum, &buffer[0], sizeof(GPSDatum));
-    memcpy(&altDatum, &buffer[sizeof(GPSDatum)], sizeof(AltimeterDatum));
-    
-    return buffer.GetSize();
+    return bytesRead;
 }
 
 uint32_t WeatherCopter::ReadWindAndIMUDump(TrisonicaDatum& triDatum, AHRSDatum& imuDatum)
 {
     BufferArray buffer(sizeof(TrisonicaDatum) + sizeof(AHRSDatum));
     
-    flash.ReadBytes(buffer);
+    uint32_t bytesRead = flash.Read(buffer);
+    if(bytesRead)
+    {
+        memcpy(&triDatum, &buffer[0],sizeof(triDatum));
+        memcpy(&imuDatum, &buffer[sizeof(triDatum)], sizeof(imuDatum));
+    }
     
-    memcpy( &triDatum, &buffer[0],sizeof(triDatum));
-    memcpy(&imuDatum, &buffer[sizeof(triDatum)], sizeof(imuDatum));
-    
-    return buffer.GetSize();
+    return bytesRead;
 }
 
 void WeatherCopter::ListStores(bool refresh)
@@ -117,36 +129,24 @@ void WeatherCopter::ListStores(bool refresh)
     }
 }
 
-uint32_t WeatherCopter::CreateStore(uint16_t number)
+uint32_t WeatherCopter::OpenStore(uint16_t number)
 /*
  * Creates a new store with the next file number
  */
 {
-    return flash.CreateStore(number, DEFAULT_DATA_SIZE);
+    return flash.OpenStore(number, DEFAULT_DATA_SIZE);
 }
 
-uint32_t WeatherCopter::EraseStore(uint8_t storeNumber)
+uint32_t WeatherCopter::EraseStore(uint16_t storeNumber)
 {
     return flash.DeleteStore(storeNumber);
 }
 
-uint32_t WeatherCopter::CloseStore(uint8_t storeNumber)
+uint32_t WeatherCopter::CloseStore(void)
 {
-    return flash.CloseStore(storeNumber);
+    return flash.CloseStore();
 }
 
-//Datastore* WeatherCopter::WriteCurrentDumpToFlash(void)
-//{
-//    currDump.buffer[1] = currDump.windDatums;
-//    Datastore* datastore = flash.WritePageToCurrentStore(currDump.buffer);
-//    if(!datastore)
-//    {
-//        SerialUSB.println(F("Error in WriteCurrentDumpToFlash()"));
-//    }
-//
-//    return datastore; //upon success (needs checking), increment the endPage
-//}
-//
 uint32_t WeatherCopter::SaveStoreToSD(uint16_t storeNumber)
 {
     SerialUSB.print("Saving store ");
@@ -173,8 +173,12 @@ uint32_t WeatherCopter::SaveStoreToSD(uint16_t storeNumber)
 
     uint32_t byteCount = 0;
 
-    flash.Select(storeNumber);
-    flash.RewindStore(storeNumber);
+    if(!flash.OpenStore(storeNumber, 0))
+    {
+        SerialUSB.println("Can't find store!.");
+        return 0;
+    }
+    flash.RewindStore();
     
     TrisonicaDatum triDatum;
     AHRSDatum imuDatum;
@@ -183,9 +187,11 @@ uint32_t WeatherCopter::SaveStoreToSD(uint16_t storeNumber)
     
     BufferArray index(1); //just need a byte, here
     
-    flash.ReadBytes(index);
+    flash.Read(index);
     while(index[0] != 0xff)
     {
+        SerialUSB.println(byteCount);
+
         if(index[0]) //wind datum
         {
             byteCount += ReadWindAndIMUDump(triDatum, imuDatum);
@@ -202,10 +208,11 @@ uint32_t WeatherCopter::SaveStoreToSD(uint16_t storeNumber)
             byteCount += ReadGPSAltDump(gpsDatum, altDatum);
         }
         
-        flash.ReadBytes(index); //get next record
+        flash.Read(index); //get next record
     }
 
     dataFile.close();
+    //flash.CloseStore();
 
     SerialUSB.print("\nDone.");
 
@@ -215,15 +222,20 @@ uint32_t WeatherCopter::SaveStoreToSD(uint16_t storeNumber)
 uint32_t WeatherCopter::SplashStore(uint16_t storeNumber)
 {
     SerialUSB.print("Splashing store ");
-    SerialUSB.println(storeNumber);
+    SerialUSB.println(storeNumber, 0);
     
-    flash.RewindStore(storeNumber);
+    if(!flash.OpenStore(storeNumber))
+    {
+        SerialUSB.println("Can't find store!.");
+        return 0;
+    }
+    flash.RewindStore();
     
     uint32_t totalBytes = 0;
     
     //read 32 at a time to make printing "clean"...heh
     BufferArray buffer(32);
-    uint32_t bytes = flash.ReadBytes(storeNumber, buffer);
+    uint32_t bytes = flash.Read(buffer);
     while(bytes)
     {
         SerialUSB.print(totalBytes);
@@ -234,59 +246,13 @@ uint32_t WeatherCopter::SplashStore(uint16_t storeNumber)
             SerialUSB.print(buffer[i], HEX);
         }
         SerialUSB.print('\n');
-        bytes = flash.ReadBytes(storeNumber, buffer);
+        bytes = flash.Read(buffer);
     }
     
     SerialUSB.print("Done ");
     
     return totalBytes;
 }
-
-//uint8_t WeatherCopter::SaveBufferToSD(File* dataFile, const BufferArray& buffer)
-//{
-//    uint8_t windDatums = buffer[1];
-//
-//    //GPSDump gpsDump;
-//
-//    GPSDatum gpsDatum;
-//    memcpy(&gpsDatum, &buffer[2], sizeof(GPSDatum));
-//    String gpsStr = gpsDatum.MakeDataString();
-//
-//    AltimeterDump altDump;
-//    memcpy(&altDump, &buffer[22], 8);
-//
-//    AltimeterDatum altDatum;
-//    String altStr = String(',') + altDatum.ParseDataDump(altDump);
-//
-//    for(int i = 0; i < windDatums; i++)
-//    {
-//        TrisonicaDatum triDatum;
-//        memcpy(&triDatum, &buffer[30 + i * 18], 12);
-//        String triStr = ',' + triDatum.MakeDataString();
-//
-//        AHRSDatum imuDatum;
-//        memcpy(&imuDatum, &buffer[30 + i * 18 + 12], 6);
-//        String imuStr = ',' + imuDatum.MakeDataString();
-//
-//        String dataString = gpsStr + altStr + triStr + imuStr;
-//
-//        int lenStr = dataString.length();
-//        if(lenStr > 127) dataString = dataString.substring(0, 128);
-//        for(int i = lenStr + 1; i <= 127; i++) //get to 127
-//        {
-//            dataString += ' ';
-//        }
-//        dataString += '\n'; //then add \n to make it 128
-//
-//        //SerialUSB.println(dataString);
-//
-//        dataFile->print(dataString);
-//    }
-//
-//    return windDatums;
-//}
-//
-//
 
 //uint8_t WeatherCopter::CheckForGPSDatum(void)
 //{

@@ -16,8 +16,6 @@
 #include <LSM9DS1.h>
 
 #include <dataflash.h>
-//#include <TList.h>
-
 #include <SdFat.h>
 
 #define FLASH_CS 7
@@ -29,7 +27,7 @@
 
 struct WeatherStore
 {
-    uint16_t fileNumber = 0;
+    uint16_t storeNumber = 0;
     char fileName[16]; //8.3 + \0
 };
 
@@ -37,7 +35,7 @@ class WeatherCopter
 {
 protected:
     FlashStoreManager flash;
-    //WeatherStore currStore;
+    //Datastore* currStore;
     
     uint8_t windCount = 0;
 public:
@@ -46,24 +44,19 @@ public:
     bool Init(void);
 
     //for managing individual records
-    //uint8_t CreateRecord(void);
-    void AddGPSAltDump(const GPSDatum&, const AltimeterDatum&);
-    void AddWindAndIMUDump(const TrisonicaDatum&, const AHRSDatum&);
+    uint32_t AddGPSAltDump(const GPSDatum&, const AltimeterDatum&);
+    uint32_t AddWindAndIMUDump(const TrisonicaDatum&, const AHRSDatum&);
     uint32_t ReadGPSAltDump(GPSDatum& gpsDatum, AltimeterDatum& altDatum);
     uint32_t ReadWindAndIMUDump(TrisonicaDatum& triDatum, AHRSDatum& imuDatum);
 
     //for managing Flash storage
     void ListStores(bool refresh = false);
-    uint32_t CreateStore(uint16_t);
-    uint32_t EraseStore(uint8_t fileNumber);
-    uint32_t CloseStore(uint8_t fileNumber);
+    uint32_t OpenStore(uint16_t);
+    uint32_t EraseStore(uint16_t);
+    uint32_t CloseStore(void);
 
     uint32_t SaveStoreToSD(uint16_t fileNumber);
     uint32_t SplashStore(uint16_t fileNumber);
-
-protected:
-    //for managing Flash storage
-    //uint8_t SaveBufferToSD(File* dataFile, const BufferArray& buffer);
 };
 
 #endif /* weather_copter_h */
